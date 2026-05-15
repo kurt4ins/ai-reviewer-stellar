@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db.models import Repository
 from app.db.session import SessionLocal
+from app.security.crypto import encrypt_token
 
 
 async def seed(
@@ -17,12 +18,13 @@ async def seed(
     webhook_secret: str,
     token: str,
 ) -> None:
+    encrypted = encrypt_token(token)
     async with SessionLocal() as session:
         stmt = pg_insert(Repository).values(
             provider=provider,
             owner=owner,
             name=name,
-            encrypted_token=token,
+            encrypted_token=encrypted,
             webhook_secret=webhook_secret,
             ignore_globs=[],
             block_critical_merge=True,
@@ -32,7 +34,7 @@ async def seed(
             index_elements=["provider", "owner", "name"],
             set_={
                 "webhook_secret": webhook_secret,
-                "encrypted_token": token,
+                "encrypted_token": encrypted,
             },
         )
         await session.execute(stmt)

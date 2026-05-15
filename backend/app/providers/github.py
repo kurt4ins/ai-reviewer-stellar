@@ -3,9 +3,28 @@ from __future__ import annotations
 import hashlib
 import hmac
 
-from app.providers.base import GitProvider, SignatureError, WebhookEvent
+import httpx
+
+from app.config import get_settings
+from app.providers.base import (
+    ChangedFile,
+    GitProvider,
+    ProviderAPIError,
+    SignatureError,
+    WebhookEvent,
+)
 
 SUPPORTED_ACTIONS = {"opened", "synchronize", "reopened", "ready_for_review"}
+
+_PER_PAGE = 100
+_STATUS_MAP = {
+    "added": "added",
+    "modified": "modified",
+    "removed": "removed",
+    "renamed": "renamed",
+    "changed": "modified",
+    "copied": "added",
+}
 
 
 class GitHubProvider(GitProvider):
@@ -60,3 +79,56 @@ class GitHubProvider(GitProvider):
             pr_number=int(pr_number),
             commit_sha=str(commit_sha),
         )
+
+    @staticmethod
+    async def get_pr_diff(
+        token: str,
+        owner: str,
+        repo: str,
+        pr_number: int,
+        client: httpx.AsyncClient | None = None,
+    ) -> list[ChangedFile]:
+        settings = get_settings()
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        owns_client = client is None
+        if client is None:
+            client = httpx.AsyncClient(
+                base_url=settings.github_api_url,
+                headers=headers,
+                timeout=settings.git_http_timeout,
+            )
+        try:
+            files: list[ChangedFile] = []
+            page = 1
+            while True:
+                resp = await client.get(
+                    f"/repos/{owner}/{repo}/pulls/{pr_number}/files",
+                    params={"per_page": _PER_PAGE, "page": page},
+                    headers=headers,
+                )
+                if resp.status_code >= 400:
+                    raise ProviderAPIError(
+                        f"github files api {resp.status_code}: {resp.text[:200]}"
+                    )
+                batch = resp.json()
+                for item in batch:
+                    raw_status = item.get("status", "modified")
+                    files.append(
+                        ChangedFile(
+                            path=item["filename"],
+                            old_path=item.get("previous_filename"),
+                            status=_STATUS_MAP.get(raw_status, "modified"),
+                            patch=item.get("patch"),
+                        )
+                    )
+                if len(batch) < _PER_PAGE:
+                    break
+                page += 1
+            return files
+        finally:
+            if owns_client:
+                await client.aclose()
