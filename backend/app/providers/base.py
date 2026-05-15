@@ -1,0 +1,33 @@
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class WebhookEvent:
+    provider: str
+    event_type: str
+    action: str
+    owner: str
+    repo: str
+    pr_number: int
+    commit_sha: str
+
+
+class SignatureError(Exception):
+    pass
+
+
+class GitProvider(ABC):
+    name: str
+
+    @staticmethod
+    @abstractmethod
+    def verify_signature(secret: str, raw_body: bytes, headers: dict[str, str]) -> None:
+        ...
+
+    @staticmethod
+    @abstractmethod
+    def parse_event(headers: dict[str, str], payload: dict) -> WebhookEvent | None:
+        ...
