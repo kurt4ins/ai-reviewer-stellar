@@ -15,7 +15,19 @@ class WebhookEvent:
     commit_sha: str
 
 
+@dataclass(frozen=True)
+class ChangedFile:
+    path: str
+    old_path: str | None
+    status: str
+    patch: str | None
+
+
 class SignatureError(Exception):
+    pass
+
+
+class ProviderAPIError(Exception):
     pass
 
 
@@ -30,4 +42,11 @@ class GitProvider(ABC):
     @staticmethod
     @abstractmethod
     def parse_event(headers: dict[str, str], payload: dict) -> WebhookEvent | None:
+        ...
+
+    @staticmethod
+    @abstractmethod
+    async def get_pr_diff(
+        token: str, owner: str, repo: str, pr_number: int
+    ) -> list[ChangedFile]:
         ...

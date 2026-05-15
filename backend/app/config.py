@@ -23,6 +23,18 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    fernet_key: str = ""
+
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    default_classifier_model: str = "deepseek/deepseek-v4-flash:free"
+    default_analyzer_model: str = "qwen/qwen3-coder:free"
+    llm_timeout: float = 120.0
+
+    github_api_url: str = "https://api.github.com"
+    gitlab_api_url: str = "https://gitlab.com/api/v4"
+    git_http_timeout: float = 30.0
+
     @property
     def database_url(self) -> str:
         return (
