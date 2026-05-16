@@ -1,11 +1,19 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_HERE = Path(__file__).resolve()
+_ENV_CANDIDATES = (
+    _HERE.parent.parent / ".env",
+    _HERE.parent.parent.parent / ".env",
+    Path.cwd() / ".env",
+)
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=tuple(str(p) for p in _ENV_CANDIDATES),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
@@ -30,6 +38,7 @@ class Settings(BaseSettings):
     default_classifier_model: str = "deepseek/deepseek-v4-flash:free"
     default_analyzer_model: str = "qwen/qwen3-coder:free"
     llm_timeout: float = 120.0
+    llm_max_retries: int = 5
 
     github_api_url: str = "https://api.github.com"
     gitlab_api_url: str = "https://gitlab.com/api/v4"

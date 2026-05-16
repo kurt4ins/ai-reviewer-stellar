@@ -23,6 +23,12 @@ class ChangedFile:
     patch: str | None
 
 
+@dataclass(frozen=True)
+class CodeSearchHit:
+    path: str
+    snippet: str
+
+
 class SignatureError(Exception):
     pass
 
@@ -49,4 +55,18 @@ class GitProvider(ABC):
     async def get_pr_diff(
         token: str, owner: str, repo: str, pr_number: int
     ) -> list[ChangedFile]:
+        ...
+
+    @staticmethod
+    @abstractmethod
+    async def get_file_content(
+        token: str, owner: str, repo: str, path: str, ref: str
+    ) -> str:
+        ...
+
+    @staticmethod
+    @abstractmethod
+    async def search_code(
+        token: str, owner: str, repo: str, query: str, *, limit: int = 5
+    ) -> list[CodeSearchHit]:
         ...
