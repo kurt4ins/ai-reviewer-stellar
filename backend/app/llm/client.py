@@ -50,6 +50,14 @@ async def complete(
         kwargs["tools"] = tools
     if tool_choice is not None:
         kwargs["tool_choice"] = tool_choice
+    kwargs["extra_body"] = {
+        "reasoning": {"effort": "low"},
+        "provider": {
+            "order": ["Novita", "GMICloud", "DeepSeek"],
+            "ignore": ["Baidu"],
+            "allow_fallbacks": True,
+        },
+    }
 
     try:
         response = await get_client().chat.completions.create(**kwargs)

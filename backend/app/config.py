@@ -29,6 +29,10 @@ class Settings(BaseSettings):
 
     webhook_base_url: str = "http://localhost:8000"
 
+    jwt_secret: str = "dev-insecure-change-me"
+    jwt_expire_minutes: int = 10080
+    cors_origins: str = "http://localhost:5173"
+
     log_level: str = "INFO"
 
     fernet_key: str = ""
@@ -38,7 +42,7 @@ class Settings(BaseSettings):
     default_classifier_model: str = "deepseek/deepseek-v4-flash:free"
     default_analyzer_model: str = "qwen/qwen3-coder:free"
     llm_timeout: float = 120.0
-    llm_max_retries: int = 5
+    llm_max_retries: int = 1
 
     github_api_url: str = "https://api.github.com"
     gitlab_api_url: str = "https://gitlab.com/api/v4"
