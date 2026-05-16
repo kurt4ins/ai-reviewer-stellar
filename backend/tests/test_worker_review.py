@@ -55,6 +55,7 @@ class _FakeRepoRecord:
     id = uuid.UUID("11111111-1111-1111-1111-111111111111")
     owner = "acme"
     name = "widgets"
+    ignore_globs: ClassVar[list[str]] = []
 
 
 class _FakeReviewRow:
