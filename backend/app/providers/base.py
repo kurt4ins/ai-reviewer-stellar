@@ -89,3 +89,18 @@ class GitProvider(ABC):
         body: str,
     ) -> PostedComment:
         ...
+
+    @staticmethod
+    @abstractmethod
+    async def set_commit_status(
+        token: str,
+        owner: str,
+        repo: str,
+        commit_sha: str,
+        state: str,
+        description: str,
+        *,
+        context: str = "security/ai-review",
+        target_url: str | None = None,
+    ) -> None:
+        ...
