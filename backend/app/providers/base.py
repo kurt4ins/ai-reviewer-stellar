@@ -29,6 +29,11 @@ class CodeSearchHit:
     snippet: str
 
 
+@dataclass(frozen=True)
+class PostedComment:
+    provider_comment_id: str
+
+
 class SignatureError(Exception):
     pass
 
@@ -69,4 +74,18 @@ class GitProvider(ABC):
     async def search_code(
         token: str, owner: str, repo: str, query: str, *, limit: int = 5
     ) -> list[CodeSearchHit]:
+        ...
+
+    @staticmethod
+    @abstractmethod
+    async def post_review_comment(
+        token: str,
+        owner: str,
+        repo: str,
+        pr_number: int,
+        commit_sha: str,
+        path: str,
+        line: int,
+        body: str,
+    ) -> PostedComment:
         ...

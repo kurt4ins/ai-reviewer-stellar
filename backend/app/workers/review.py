@@ -3,19 +3,40 @@ from __future__ import annotations
 import logging
 from typing import ClassVar
 
+from sqlalchemy import select
+
 from app.config import get_settings
-from app.db.models import Review
+from app.db.models import Finding, Review
 from app.db.repositories import get_repository_by_id
-from app.db.reviews import create_review, finalize_review, mark_review_failed
+from app.db.reviews import (
+    create_review,
+    finalize_review,
+    mark_review_failed,
+    record_review_thread,
+)
 from app.db.session import SessionLocal
+from app.llm.comment_format import render_finding_comment
 from app.llm.pipeline import AnalyzedFinding, analyze_pull_request_hunk
 from app.llm.tools import ToolContext
 from app.providers import get_provider
-from app.security.crypto import decrypt_token
+from app.providers.base import ProviderAPIError
 from app.utils.diff_parser import parse_patch
 from app.workers.queue import redis_settings as _redis_settings
 
 logger = logging.getLogger("stellar.worker")
+
+
+def _bot_token(provider: str) -> str:
+    settings = get_settings()
+    if provider == "github":
+        token = settings.github_bot_token
+    elif provider == "gitlab":
+        token = settings.gitlab_bot_token
+    else:
+        raise RuntimeError(f"unknown provider: {provider}")
+    if not token:
+        raise RuntimeError(f"{provider}_bot_token is not configured")
+    return token
 
 
 async def review_pull_request(
@@ -33,6 +54,7 @@ async def review_pull_request(
         commit_sha,
     )
     settings = get_settings()
+    token = _bot_token(provider)
 
     async with SessionLocal() as session:
         repo = await get_repository_by_id(session, repository_id)
@@ -41,7 +63,6 @@ async def review_pull_request(
             return {"status": "repository_not_found", "repository_id": repository_id}
         owner = repo.owner
         name = repo.name
-        token = decrypt_token(repo.encrypted_token)
         review = await create_review(
             session,
             repository_id=repo.id,
@@ -121,9 +142,19 @@ async def review_pull_request(
         await finalize_review(session, review=final_review, findings=all_findings)
         await session.commit()
 
+    posted, post_errors = await _publish_findings(
+        provider_cls=provider_cls,
+        token=token,
+        owner=owner,
+        name=name,
+        pr_number=pr_number,
+        commit_sha=commit_sha,
+        review_id=review_id,
+    )
+
     logger.info(
         "review finished provider=%s repo=%s/%s pr=%s files=%s hunks=%s "
-        "findings=%s skipped_files=%s skipped_hunks=%s",
+        "findings=%s posted=%s post_errors=%s skipped_files=%s skipped_hunks=%s",
         provider,
         owner,
         name,
@@ -131,6 +162,8 @@ async def review_pull_request(
         len(changed_files),
         hunk_count,
         len(all_findings),
+        posted,
+        post_errors,
         skipped_files,
         skipped_hunks,
     )
@@ -145,9 +178,73 @@ async def review_pull_request(
         "files": len(changed_files),
         "hunks": hunk_count,
         "findings": len(all_findings),
+        "posted": posted,
+        "post_errors": post_errors,
         "skipped_files": skipped_files,
         "skipped_hunks": skipped_hunks,
     }
+
+
+async def _publish_findings(
+    *,
+    provider_cls,
+    token: str,
+    owner: str,
+    name: str,
+    pr_number: int,
+    commit_sha: str,
+    review_id,
+) -> tuple[int, int]:
+    posted = 0
+    errors = 0
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(Finding).where(Finding.review_id == review_id).order_by(Finding.line_number)
+        )
+        findings = list(result.scalars().all())
+
+    for finding in findings:
+        analyzed = AnalyzedFinding(
+            file_path=finding.file_path,
+            cwe=finding.cwe,
+            severity=finding.severity,
+            line_number=finding.line_number,
+            description=finding.description,
+            confidence=finding.confidence,
+            fix_code=finding.fix_code,
+            fix_explanation=finding.fix_explanation,
+        )
+        body = render_finding_comment(analyzed)
+        try:
+            comment = await provider_cls.post_review_comment(
+                token,
+                owner,
+                name,
+                pr_number,
+                commit_sha,
+                finding.file_path,
+                finding.line_number,
+                body,
+            )
+        except ProviderAPIError as exc:
+            errors += 1
+            logger.warning(
+                "failed to post comment for finding=%s file=%s line=%s: %s",
+                finding.id,
+                finding.file_path,
+                finding.line_number,
+                exc,
+            )
+            continue
+        async with SessionLocal() as session:
+            await record_review_thread(
+                session,
+                finding_id=finding.id,
+                provider_comment_id=comment.provider_comment_id,
+            )
+            await session.commit()
+        posted += 1
+    return posted, errors
 
 
 class WorkerSettings:

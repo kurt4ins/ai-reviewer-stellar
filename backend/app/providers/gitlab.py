@@ -11,6 +11,7 @@ from app.providers.base import (
     ChangedFile,
     CodeSearchHit,
     GitProvider,
+    PostedComment,
     ProviderAPIError,
     SignatureError,
     WebhookEvent,
@@ -202,6 +203,72 @@ class GitLabProvider(GitProvider):
                     )
                 )
             return hits
+        finally:
+            if owns_client:
+                await client.aclose()
+
+    @staticmethod
+    async def post_review_comment(
+        token: str,
+        owner: str,
+        repo: str,
+        pr_number: int,
+        commit_sha: str,
+        path: str,
+        line: int,
+        body: str,
+        client: httpx.AsyncClient | None = None,
+    ) -> PostedComment:
+        settings = get_settings()
+        headers = {"PRIVATE-TOKEN": token}
+        project_id = quote(f"{owner}/{repo}", safe="")
+        owns_client = client is None
+        if client is None:
+            client = httpx.AsyncClient(
+                base_url=settings.gitlab_api_url,
+                headers=headers,
+                timeout=settings.git_http_timeout,
+            )
+        try:
+            mr_resp = await client.get(
+                f"/projects/{project_id}/merge_requests/{pr_number}",
+                headers=headers,
+            )
+            if mr_resp.status_code >= 400:
+                raise ProviderAPIError(
+                    f"gitlab mr fetch {mr_resp.status_code}: {mr_resp.text[:200]}"
+                )
+            diff_refs = (mr_resp.json() or {}).get("diff_refs") or {}
+            base_sha = diff_refs.get("base_sha")
+            start_sha = diff_refs.get("start_sha")
+            head_sha = diff_refs.get("head_sha") or commit_sha
+            if not (base_sha and start_sha and head_sha):
+                raise ProviderAPIError("gitlab mr: incomplete diff_refs")
+
+            resp = await client.post(
+                f"/projects/{project_id}/merge_requests/{pr_number}/discussions",
+                headers=headers,
+                json={
+                    "body": body,
+                    "position": {
+                        "position_type": "text",
+                        "base_sha": base_sha,
+                        "start_sha": start_sha,
+                        "head_sha": head_sha,
+                        "new_path": path,
+                        "new_line": line,
+                    },
+                },
+            )
+            if resp.status_code >= 400:
+                raise ProviderAPIError(
+                    f"gitlab discussion {resp.status_code}: {resp.text[:200]}"
+                )
+            data = resp.json()
+            discussion_id = data.get("id")
+            if discussion_id is None:
+                raise ProviderAPIError("gitlab discussion: missing id in response")
+            return PostedComment(provider_comment_id=str(discussion_id))
         finally:
             if owns_client:
                 await client.aclose()

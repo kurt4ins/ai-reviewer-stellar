@@ -11,6 +11,7 @@ from app.providers.base import (
     ChangedFile,
     CodeSearchHit,
     GitProvider,
+    PostedComment,
     ProviderAPIError,
     SignatureError,
     WebhookEvent,
@@ -227,6 +228,56 @@ class GitHubProvider(GitProvider):
                 snippet = "\n---\n".join(p for p in snippet_parts if p)
                 hits.append(CodeSearchHit(path=item.get("path", ""), snippet=snippet))
             return hits
+        finally:
+            if owns_client:
+                await client.aclose()
+
+    @staticmethod
+    async def post_review_comment(
+        token: str,
+        owner: str,
+        repo: str,
+        pr_number: int,
+        commit_sha: str,
+        path: str,
+        line: int,
+        body: str,
+        client: httpx.AsyncClient | None = None,
+    ) -> PostedComment:
+        settings = get_settings()
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        owns_client = client is None
+        if client is None:
+            client = httpx.AsyncClient(
+                base_url=settings.github_api_url,
+                headers=headers,
+                timeout=settings.git_http_timeout,
+            )
+        try:
+            resp = await client.post(
+                f"/repos/{owner}/{repo}/pulls/{pr_number}/comments",
+                headers=headers,
+                json={
+                    "body": body,
+                    "commit_id": commit_sha,
+                    "path": path,
+                    "line": line,
+                    "side": "RIGHT",
+                },
+            )
+            if resp.status_code >= 400:
+                raise ProviderAPIError(
+                    f"github review comment {resp.status_code}: {resp.text[:200]}"
+                )
+            data = resp.json()
+            comment_id = data.get("id")
+            if comment_id is None:
+                raise ProviderAPIError("github review comment: missing id in response")
+            return PostedComment(provider_comment_id=str(comment_id))
         finally:
             if owns_client:
                 await client.aclose()
