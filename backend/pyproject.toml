@@ -18,6 +18,8 @@ dependencies = [
     "orjson>=3.10.11",
     "openai>=1.54.0",
     "unidiff>=0.7.5",
+    "bcrypt>=4.2.0",
+    "pyjwt>=2.9.0",
 ]
 
 [dependency-groups]
