@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 
@@ -8,6 +9,7 @@ import httpx
 from app.config import get_settings
 from app.providers.base import (
     ChangedFile,
+    CodeSearchHit,
     GitProvider,
     ProviderAPIError,
     SignatureError,
@@ -129,6 +131,102 @@ class GitHubProvider(GitProvider):
                     break
                 page += 1
             return files
+        finally:
+            if owns_client:
+                await client.aclose()
+
+    @staticmethod
+    async def get_file_content(
+        token: str,
+        owner: str,
+        repo: str,
+        path: str,
+        ref: str,
+        client: httpx.AsyncClient | None = None,
+    ) -> str:
+        settings = get_settings()
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        owns_client = client is None
+        if client is None:
+            client = httpx.AsyncClient(
+                base_url=settings.github_api_url,
+                headers=headers,
+                timeout=settings.git_http_timeout,
+            )
+        try:
+            resp = await client.get(
+                f"/repos/{owner}/{repo}/contents/{path}",
+                params={"ref": ref},
+                headers=headers,
+            )
+            if resp.status_code >= 400:
+                raise ProviderAPIError(
+                    f"github contents api {resp.status_code}: {resp.text[:200]}"
+                )
+            data = resp.json()
+            if data.get("type") != "file" or "content" not in data:
+                raise ProviderAPIError(f"github contents: not a file at {path}")
+            encoding = data.get("encoding", "base64")
+            if encoding != "base64":
+                raise ProviderAPIError(f"github contents: unexpected encoding {encoding}")
+            try:
+                return base64.b64decode(data["content"]).decode("utf-8", errors="replace")
+            except (ValueError, TypeError) as exc:
+                raise ProviderAPIError(f"github contents decode: {exc}") from exc
+        finally:
+            if owns_client:
+                await client.aclose()
+
+    @staticmethod
+    async def search_code(
+        token: str,
+        owner: str,
+        repo: str,
+        query: str,
+        *,
+        limit: int = 5,
+        client: httpx.AsyncClient | None = None,
+    ) -> list[CodeSearchHit]:
+        settings = get_settings()
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github.text-match+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        owns_client = client is None
+        if client is None:
+            client = httpx.AsyncClient(
+                base_url=settings.github_api_url,
+                headers=headers,
+                timeout=settings.git_http_timeout,
+            )
+        try:
+            resp = await client.get(
+                "/search/code",
+                params={
+                    "q": f"{query} repo:{owner}/{repo}",
+                    "per_page": limit,
+                },
+                headers=headers,
+            )
+            if resp.status_code >= 400:
+                raise ProviderAPIError(
+                    f"github search api {resp.status_code}: {resp.text[:200]}"
+                )
+            data = resp.json()
+            hits: list[CodeSearchHit] = []
+            for item in data.get("items", [])[:limit]:
+                snippet_parts = [
+                    str(m.get("fragment", ""))
+                    for m in (item.get("text_matches") or [])
+                ]
+                snippet = "\n---\n".join(p for p in snippet_parts if p)
+                hits.append(CodeSearchHit(path=item.get("path", ""), snippet=snippet))
+            return hits
         finally:
             if owns_client:
                 await client.aclose()

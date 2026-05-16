@@ -1,2 +1,45 @@
 .DS_Store
 .env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Node / frontend
+node_modules/
+.next/
+.turbo/
+.vite/
+.parcel-cache/
+.eslintcache
+*.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/

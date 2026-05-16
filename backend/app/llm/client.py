@@ -22,6 +22,7 @@ def get_client() -> AsyncOpenAI:
         api_key=settings.openrouter_api_key,
         base_url=settings.openrouter_base_url,
         timeout=settings.llm_timeout,
+        max_retries=settings.llm_max_retries,
         default_headers={
             "HTTP-Referer": settings.webhook_base_url,
             "X-Title": "Stellar AI Reviewer",

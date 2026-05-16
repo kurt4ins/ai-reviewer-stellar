@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hmac
 from urllib.parse import quote
 
@@ -8,6 +9,7 @@ import httpx
 from app.config import get_settings
 from app.providers.base import (
     ChangedFile,
+    CodeSearchHit,
     GitProvider,
     ProviderAPIError,
     SignatureError,
@@ -114,6 +116,92 @@ class GitLabProvider(GitProvider):
                     )
                 )
             return files
+        finally:
+            if owns_client:
+                await client.aclose()
+
+    @staticmethod
+    async def get_file_content(
+        token: str,
+        owner: str,
+        repo: str,
+        path: str,
+        ref: str,
+        client: httpx.AsyncClient | None = None,
+    ) -> str:
+        settings = get_settings()
+        headers = {"PRIVATE-TOKEN": token}
+        project_id = quote(f"{owner}/{repo}", safe="")
+        file_path = quote(path, safe="")
+        owns_client = client is None
+        if client is None:
+            client = httpx.AsyncClient(
+                base_url=settings.gitlab_api_url,
+                headers=headers,
+                timeout=settings.git_http_timeout,
+            )
+        try:
+            resp = await client.get(
+                f"/projects/{project_id}/repository/files/{file_path}",
+                params={"ref": ref},
+                headers=headers,
+            )
+            if resp.status_code >= 400:
+                raise ProviderAPIError(
+                    f"gitlab files api {resp.status_code}: {resp.text[:200]}"
+                )
+            data = resp.json()
+            content_b64 = data.get("content")
+            if not content_b64:
+                raise ProviderAPIError(f"gitlab files: missing content at {path}")
+            try:
+                return base64.b64decode(content_b64).decode("utf-8", errors="replace")
+            except (ValueError, TypeError) as exc:
+                raise ProviderAPIError(f"gitlab files decode: {exc}") from exc
+        finally:
+            if owns_client:
+                await client.aclose()
+
+    @staticmethod
+    async def search_code(
+        token: str,
+        owner: str,
+        repo: str,
+        query: str,
+        *,
+        limit: int = 5,
+        client: httpx.AsyncClient | None = None,
+    ) -> list[CodeSearchHit]:
+        settings = get_settings()
+        headers = {"PRIVATE-TOKEN": token}
+        project_id = quote(f"{owner}/{repo}", safe="")
+        owns_client = client is None
+        if client is None:
+            client = httpx.AsyncClient(
+                base_url=settings.gitlab_api_url,
+                headers=headers,
+                timeout=settings.git_http_timeout,
+            )
+        try:
+            resp = await client.get(
+                f"/projects/{project_id}/search",
+                params={"scope": "blobs", "search": query, "per_page": limit},
+                headers=headers,
+            )
+            if resp.status_code >= 400:
+                raise ProviderAPIError(
+                    f"gitlab search api {resp.status_code}: {resp.text[:200]}"
+                )
+            data = resp.json()
+            hits: list[CodeSearchHit] = []
+            for item in data[:limit]:
+                hits.append(
+                    CodeSearchHit(
+                        path=item.get("path") or item.get("filename") or "",
+                        snippet=str(item.get("data", "")),
+                    )
+                )
+            return hits
         finally:
             if owns_client:
                 await client.aclose()
