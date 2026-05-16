@@ -56,6 +56,7 @@ class _FakeRepoRecord:
     owner = "acme"
     name = "widgets"
     block_critical_merge = True
+    ignore_globs: ClassVar[list[str]] = []
 
 
 class _FakeReviewRow:

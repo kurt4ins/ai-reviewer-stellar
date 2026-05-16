@@ -21,6 +21,7 @@ from app.llm.tools import ToolContext
 from app.providers import get_provider
 from app.providers.base import ProviderAPIError
 from app.utils.diff_parser import parse_patch
+from app.utils.file_filter import should_ignore_file
 from app.workers.queue import redis_settings as _redis_settings
 
 logger = logging.getLogger("stellar.worker")
@@ -64,6 +65,7 @@ async def review_pull_request(
         owner = repo.owner
         name = repo.name
         block_critical_merge = repo.block_critical_merge
+        ignore_globs = list(repo.ignore_globs or [])
         review = await create_review(
             session,
             repository_id=repo.id,
@@ -102,6 +104,10 @@ async def review_pull_request(
         if changed.patch is None:
             skipped_files += 1
             logger.info("skipping file without patch: %s", changed.path)
+            continue
+        if should_ignore_file(changed.path, ignore_globs):
+            skipped_files += 1
+            logger.info("skipping ignored file: %s", changed.path)
             continue
         hunks = parse_patch(changed.path, changed.patch)
         for hunk in hunks:
