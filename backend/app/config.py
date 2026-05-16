@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     gitlab_api_url: str = "https://gitlab.com/api/v4"
     git_http_timeout: float = 30.0
 
+    github_bot_token: str = ""
+    gitlab_bot_token: str = ""
+
     @property
     def database_url(self) -> str:
         return (

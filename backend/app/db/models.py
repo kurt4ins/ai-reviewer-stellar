@@ -35,7 +35,6 @@ class Repository(Base):
     provider: Mapped[str] = mapped_column(String(16), nullable=False)
     owner: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    encrypted_token: Mapped[str] = mapped_column(Text, nullable=False)
     webhook_secret: Mapped[str] = mapped_column(String(255), nullable=False)
     ignore_globs: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     block_critical_merge: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

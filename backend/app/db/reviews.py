@@ -5,7 +5,7 @@ from collections.abc import Iterable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Finding, Review
+from app.db.models import Finding, Review, ReviewThread
 from app.llm.pipeline import AnalyzedFinding
 
 
@@ -64,3 +64,19 @@ async def mark_review_failed(
     review.status = "failed"
     await session.flush()
     return review
+
+
+async def record_review_thread(
+    session: AsyncSession,
+    *,
+    finding_id: uuid.UUID,
+    provider_comment_id: str,
+) -> ReviewThread:
+    thread = ReviewThread(
+        finding_id=finding_id,
+        provider_comment_id=provider_comment_id,
+        messages_json=[],
+    )
+    session.add(thread)
+    await session.flush()
+    return thread

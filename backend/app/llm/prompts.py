@@ -27,7 +27,8 @@ CLASSIFIER_SYSTEM = (
     "7. If you found concrete issues, return status=\"found\".\n"
     "8. If you suspect something but need more context (full file, function definition), "
     "return status=\"unsure\" and put concrete questions in the questions array.\n"
-    "9. Output ONLY a JSON object matching the requested schema. No prose, no markdown."
+    "9. Output ONLY a JSON object matching the requested schema. No prose, no markdown.\n"
+    "10. All human-readable text fields (description, questions) MUST be written in Russian."
 )
 
 
@@ -60,7 +61,9 @@ ANALYZER_SYSTEM = (
     "3. cwe must remain a valid CWE-XXX id from the catalog.\n"
     "4. Recompute confidence as a calibrated probability (0.0-1.0).\n"
     "5. You may add NEW findings that the classifier missed, with the same shape.\n"
-    "6. line_number must point to the exact added line where the vulnerability sits.\n\n"
+    "6. line_number must point to the exact added line where the vulnerability sits.\n"
+    "7. All human-readable text (description, fix_explanation) MUST be written in Russian. "
+    "fix_code stays as code in the source language.\n\n"
     "Output ONLY a JSON object with the field \"findings\" — no prose."
 )
 
