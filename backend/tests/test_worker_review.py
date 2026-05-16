@@ -55,6 +55,7 @@ class _FakeRepoRecord:
     id = uuid.UUID("11111111-1111-1111-1111-111111111111")
     owner = "acme"
     name = "widgets"
+    block_critical_merge = True
     ignore_globs: ClassVar[list[str]] = []
 
 
@@ -82,6 +83,7 @@ class _FakeFindingRow:
 class _FakeProvider:
     name = "github"
     posted: ClassVar[list[dict]] = []
+    statuses: ClassVar[list[dict]] = []
 
     @staticmethod
     async def get_pr_diff(token, owner, repo, pr_number):
@@ -122,6 +124,18 @@ class _FakeProvider:
         )
         return PostedComment(provider_comment_id=f"gh-{len(_FakeProvider.posted)}")
 
+    @staticmethod
+    async def set_commit_status(
+        token, owner, repo, commit_sha, state, description, **kwargs
+    ):
+        _FakeProvider.statuses.append(
+            {
+                "commit_sha": commit_sha,
+                "state": state,
+                "description": description,
+            }
+        )
+
 
 @pytest.fixture(autouse=True)
 def _bot_token_env(monkeypatch):
@@ -137,6 +151,7 @@ def _bot_token_env(monkeypatch):
 @pytest.fixture(autouse=True)
 def _reset_provider():
     _FakeProvider.posted.clear()
+    _FakeProvider.statuses.clear()
     yield
 
 
@@ -220,6 +235,12 @@ async def test_review_pull_request_persists_findings_and_posts_comments(monkeypa
     assert "CWE-798" in posted["body"]
     assert len(thread_records) == 1
     assert thread_records[0]["provider_comment_id"] == "gh-1"
+    assert result["merge_status"] == "failure"
+    assert len(_FakeProvider.statuses) == 1
+    status = _FakeProvider.statuses[0]
+    assert status["state"] == "failure"
+    assert status["commit_sha"] == "abc123"
+    assert "1 critical" in status["description"]
 
 
 @pytest.mark.asyncio

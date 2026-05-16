@@ -64,6 +64,7 @@ async def review_pull_request(
             return {"status": "repository_not_found", "repository_id": repository_id}
         owner = repo.owner
         name = repo.name
+        block_critical_merge = repo.block_critical_merge
         ignore_globs = list(repo.ignore_globs or [])
         review = await create_review(
             session,
@@ -158,6 +159,34 @@ async def review_pull_request(
         review_id=review_id,
     )
 
+    critical_count = sum(1 for f in all_findings if f.severity == "critical")
+    if critical_count and block_critical_merge:
+        status_state = "failure"
+        status_desc = f"{critical_count} critical vulnerabilities"
+    else:
+        status_state = "success"
+        status_desc = (
+            f"{critical_count} critical found (merge not blocked)"
+            if critical_count
+            else "No critical vulnerabilities"
+        )
+    try:
+        await provider_cls.set_commit_status(
+            token,
+            owner,
+            name,
+            commit_sha,
+            status_state,
+            status_desc,
+        )
+    except Exception as exc:
+        logger.warning(
+            "failed to set commit status sha=%s state=%s: %s",
+            commit_sha,
+            status_state,
+            exc,
+        )
+
     logger.info(
         "review finished provider=%s repo=%s/%s pr=%s files=%s hunks=%s "
         "findings=%s posted=%s post_errors=%s skipped_files=%s skipped_hunks=%s",
@@ -188,6 +217,8 @@ async def review_pull_request(
         "post_errors": post_errors,
         "skipped_files": skipped_files,
         "skipped_hunks": skipped_hunks,
+        "critical_count": critical_count,
+        "merge_status": status_state,
     }
 
 

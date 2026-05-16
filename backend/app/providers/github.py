@@ -281,3 +281,50 @@ class GitHubProvider(GitProvider):
         finally:
             if owns_client:
                 await client.aclose()
+
+    @staticmethod
+    async def set_commit_status(
+        token: str,
+        owner: str,
+        repo: str,
+        commit_sha: str,
+        state: str,
+        description: str,
+        *,
+        context: str = "security/ai-review",
+        target_url: str | None = None,
+        client: httpx.AsyncClient | None = None,
+    ) -> None:
+        settings = get_settings()
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        owns_client = client is None
+        if client is None:
+            client = httpx.AsyncClient(
+                base_url=settings.github_api_url,
+                headers=headers,
+                timeout=settings.git_http_timeout,
+            )
+        try:
+            payload = {
+                "state": state,
+                "description": description[:140],
+                "context": context,
+            }
+            if target_url:
+                payload["target_url"] = target_url
+            resp = await client.post(
+                f"/repos/{owner}/{repo}/statuses/{commit_sha}",
+                headers=headers,
+                json=payload,
+            )
+            if resp.status_code >= 400:
+                raise ProviderAPIError(
+                    f"github commit status {resp.status_code}: {resp.text[:200]}"
+                )
+        finally:
+            if owns_client:
+                await client.aclose()
